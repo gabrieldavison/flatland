@@ -201,11 +201,32 @@ const setupEventListeners = () => {
   });
 };
 
-// Expose functions to the global scope for user interaction
-(window as any).moveSquare = (direction: "up" | "down", distance: number) => {
-  const dy = direction === "up" ? -distance : distance;
-  state = updateSquarePosition(state, dy);
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const repeat = async (times: number, commands: (() => Promise<void>)[]) => {
+  for (let i = 0; i < times; i++) {
+    for (const command of commands) {
+      await command();
+    }
+  }
 };
+
+const moveSquare = (
+  direction: "up" | "down",
+  distance: number
+): Promise<void> => {
+  return new Promise<void>((resolve) => {
+    const dy = direction === "up" ? -distance : distance;
+    state = updateSquarePosition(state, dy);
+    render(state);
+    resolve();
+  });
+};
+
+// Expose functions to the global scope for user interaction
+(window as any).moveSquare = moveSquare;
+
+(window as any).repeat = repeat;
 
 setupEventListeners();
 animate();
