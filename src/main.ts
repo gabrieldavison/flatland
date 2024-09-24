@@ -1,3 +1,5 @@
+import "./style.css";
+
 interface Point {
   x: number;
   y: number;
@@ -38,38 +40,27 @@ const createInitialState = (): AppState => {
 
 let state = createInitialState();
 
-const updateSquarePosition = (state: AppState, dy: number): AppState => {
+const updateSquarePosition = (
+  state: AppState,
+  dx: number,
+  dy: number
+): AppState => {
+  const newHorizontalPosition = state.horizontalPosition + dx;
   const newVerticalOffset = state.square.verticalOffset + dy;
   const newPath = [
     ...state.path,
-    { x: state.horizontalPosition, y: newVerticalOffset },
+    { x: newHorizontalPosition, y: newVerticalOffset },
   ];
   return {
     ...state,
     square: { ...state.square, verticalOffset: newVerticalOffset },
     path: newPath,
-    minX: Math.min(state.minX, state.horizontalPosition),
-    maxX: Math.max(state.maxX, state.horizontalPosition),
+    horizontalPosition: newHorizontalPosition,
+    minX: Math.min(state.minX, newHorizontalPosition),
+    maxX: Math.max(state.maxX, newHorizontalPosition),
     minY: Math.min(state.minY, newVerticalOffset),
     maxY: Math.max(state.maxY, newVerticalOffset),
   };
-};
-
-const drawSquare = (
-  ctx: CanvasRenderingContext2D,
-  square: Square,
-  canvasWidth: number,
-  canvasHeight: number
-) => {
-  const centerX = canvasWidth / 2;
-  const centerY = canvasHeight / 2;
-  ctx.fillStyle = "red";
-  ctx.fillRect(
-    centerX - square.size / 2,
-    centerY - square.size / 2,
-    square.size,
-    square.size
-  );
 };
 
 const drawPath = (
@@ -212,21 +203,107 @@ const repeat = async (times: number, commands: (() => Promise<void>)[]) => {
 };
 
 const moveSquare = (
-  direction: "up" | "down",
+  direction: "up" | "down" | "back" | "forward",
   distance: number
 ): Promise<void> => {
   return new Promise<void>((resolve) => {
-    const dy = direction === "up" ? -distance : distance;
-    state = updateSquarePosition(state, dy);
+    let dx = 0;
+    let dy = 0;
+
+    switch (direction) {
+      case "up":
+        dy = -distance;
+        break;
+      case "down":
+        dy = distance;
+        break;
+      case "back":
+        dx = -distance;
+        break;
+      case "forward":
+        dx = distance;
+        break;
+    }
+
+    state = updateSquarePosition(state, dx, dy);
     render(state);
     resolve();
   });
 };
 
+const up = (distance: number): Promise<void> => moveSquare("up", distance);
+const down = (distance: number): Promise<void> => moveSquare("down", distance);
+const back = (distance: number): Promise<void> => moveSquare("back", distance);
+const forward = (distance: number): Promise<void> =>
+  moveSquare("forward", distance);
+
+const parseCommand = (cmd: string): [string, number] => {
+  const direction = cmd.charAt(0);
+  const value = parseInt(cmd.slice(1));
+  switch (direction) {
+    case "u":
+      return ["up", value];
+    case "d":
+      return ["down", value];
+    case "b":
+      return ["back", value];
+    case "f":
+      return ["forward", value];
+    case "w":
+      return ["wait", value];
+    default:
+      throw new Error(`Unknown command: ${direction}`);
+  }
+};
+
+const executeCommands = async (commands: string[]) => {
+  for (const cmd of commands) {
+    const [action, value] = parseCommand(cmd);
+    if (action === "wait") {
+      await wait(value);
+    } else {
+      await moveSquare(action as "up" | "down" | "back" | "forward", value);
+    }
+  }
+};
+
+let animationId: number | null = null;
+
+const r = (commandString: string) => {
+  const commands = commandString.split(" ");
+
+  const loop = async () => {
+    await executeCommands(commands);
+    animationId = requestAnimationFrame(loop);
+  };
+
+  // Cancel any existing animation before starting a new one
+  if (animationId !== null) {
+    cancelAnimationFrame(animationId);
+  }
+
+  loop();
+};
+
+const stop = () => {
+  if (animationId !== null) {
+    cancelAnimationFrame(animationId);
+    animationId = null;
+    console.log("Animation stopped");
+  } else {
+    console.log("No animation running");
+  }
+};
 // Expose functions to the global scope for user interaction
 (window as any).moveSquare = moveSquare;
-
+(window as any).up = up;
+(window as any).down = down;
+(window as any).back = back;
+(window as any).back = forward;
 (window as any).repeat = repeat;
+(window as any).wait = wait;
+(window as any).r = r;
+(window as any).stop = stop;
 
 setupEventListeners();
 animate();
