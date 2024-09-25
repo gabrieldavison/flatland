@@ -20,6 +20,8 @@ interface AppState {
   maxX: number;
   minY: number;
   maxY: number;
+  frameCount: number;
+  speed: number;
 }
 
 const createInitialState = (): AppState => {
@@ -35,18 +37,22 @@ const createInitialState = (): AppState => {
     maxX: 0,
     minY: 0,
     maxY: 0,
+    frameCount: 0,
+    speed: 1,
   };
 };
 
 let state = createInitialState();
+
+let evalHistory: string[] = [];
 
 const updateSquarePosition = (
   state: AppState,
   dx: number,
   dy: number
 ): AppState => {
-  const newHorizontalPosition = state.horizontalPosition + dx;
-  const newVerticalOffset = state.square.verticalOffset + dy;
+  const newHorizontalPosition = state.horizontalPosition + dx * state.speed;
+  const newVerticalOffset = state.square.verticalOffset + dy * state.speed;
   const newPath = [
     ...state.path,
     { x: newHorizontalPosition, y: newVerticalOffset },
@@ -60,6 +66,7 @@ const updateSquarePosition = (
     maxX: Math.max(state.maxX, newHorizontalPosition),
     minY: Math.min(state.minY, newVerticalOffset),
     maxY: Math.max(state.maxY, newVerticalOffset),
+    frameCount: state.frameCount + 1,
   };
 };
 
@@ -75,7 +82,7 @@ const drawPath = (
   minY: number,
   maxY: number
 ) => {
-  ctx.strokeStyle = "black";
+  ctx.strokeStyle = "#090A02";
   ctx.beginPath();
 
   const pathWidth = maxX - minX;
@@ -100,7 +107,7 @@ const drawPath = (
   // Draw the square at its current position
   const squareX = horizontalPosition * scale + offsetX;
   const squareY = verticalOffset * scale + offsetY;
-  ctx.fillStyle = "red";
+  ctx.fillStyle = "#E03C17";
   ctx.fillRect(squareX - 10, squareY - 10, 20, 20);
 };
 
@@ -123,12 +130,16 @@ const render = (state: AppState) => {
 const animate = () => {
   state = {
     ...state,
-    horizontalPosition: state.horizontalPosition + 1,
-    maxX: Math.max(state.maxX, state.horizontalPosition + 1),
+    horizontalPosition: state.horizontalPosition + 1 * state.speed,
+    maxX: Math.max(state.maxX, state.horizontalPosition + 1 * state.speed),
     path: [
       ...state.path,
-      { x: state.horizontalPosition + 1, y: state.square.verticalOffset },
+      {
+        x: state.horizontalPosition + 1 * state.speed,
+        y: state.square.verticalOffset,
+      },
     ],
+    frameCount: state.frameCount + 1,
   };
   render(state);
   requestAnimationFrame(animate);
@@ -162,20 +173,34 @@ const getPathImage = () => {
 };
 
 const setupEventListeners = () => {
-  const codeInput = document.getElementById("codeInput") as HTMLTextAreaElement;
+  const codeInput = document.getElementById("code-input") as HTMLInputElement;
   const runButton = document.getElementById("runButton") as HTMLButtonElement;
   const captureButton = document.getElementById(
     "captureButton"
   ) as HTMLButtonElement;
 
-  runButton.addEventListener("click", () => {
-    try {
-      // Use with caution: eval can be dangerous if used with untrusted input
-      eval(codeInput.value);
-    } catch (error) {
-      console.error("Error executing code:", error);
+  const evaluateCode = () => {
+    const code = codeInput.value.trim();
+    if (code) {
+      try {
+        eval(code);
+        evalHistory.push(code);
+        console.log("Code executed:", code);
+      } catch (error) {
+        console.error("Error executing code:", error);
+      }
+      codeInput.value = ""; // Clear the input field
+    }
+  };
+
+  codeInput.addEventListener("keypress", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault(); // Prevent default form submission
+      evaluateCode();
     }
   });
+
+  runButton.addEventListener("click", evaluateCode);
 
   captureButton.addEventListener("click", () => {
     const imageDataUrl = getPathImage();
@@ -192,7 +217,19 @@ const setupEventListeners = () => {
   });
 };
 
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const wait = (frames: number) =>
+  new Promise((resolve) => {
+    const adjustedFrames = frames / state.speed;
+    const targetFrame = state.frameCount + adjustedFrames;
+    const checkFrame = () => {
+      if (state.frameCount >= targetFrame) {
+        resolve();
+      } else {
+        requestAnimationFrame(checkFrame);
+      }
+    };
+    checkFrame();
+  });
 
 const repeat = async (times: number, commands: (() => Promise<void>)[]) => {
   for (let i = 0; i < times; i++) {
@@ -294,16 +331,33 @@ const stop = () => {
     console.log("No animation running");
   }
 };
+
+const speed = (newSpeed: number) => {
+  state.speed = newSpeed;
+  console.log(`Speed set to ${newSpeed}`);
+};
+
 // Expose functions to the global scope for user interaction
 (window as any).moveSquare = moveSquare;
 (window as any).up = up;
 (window as any).down = down;
 (window as any).back = back;
-(window as any).back = forward;
+(window as any).forward = forward;
 (window as any).repeat = repeat;
 (window as any).wait = wait;
 (window as any).r = r;
 (window as any).stop = stop;
+(window as any).speed = speed;
 
 setupEventListeners();
 animate();
+
+/**
+ * colors
+ * bg - E2E0CB
+ * y - EBA51D
+ * o - CF6347
+ * b - 073C79
+ * black - 090A02
+ * r - E03C17
+ */
