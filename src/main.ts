@@ -1,6 +1,6 @@
 import "./style.css";
 
-///////////////////////////// Engine
+///////////////////////////// Types and Interfaces /////////////////////////////
 
 interface Point {
   x: number;
@@ -27,6 +27,14 @@ interface AppState {
   isStarted: boolean;
 }
 
+interface CommandLoop {
+  id: number | null;
+  commands: string[];
+  stopRequest: boolean;
+}
+
+///////////////////////////// State Management /////////////////////////////
+
 const createInitialState = (): AppState => {
   const canvas = document.getElementById("canvas") as HTMLCanvasElement;
   const ctx = canvas.getContext("2d")!;
@@ -47,8 +55,11 @@ const createInitialState = (): AppState => {
 };
 
 let state = createInitialState();
-
 let evalHistory: string[] = [];
+let commandLoops: CommandLoop[] = [];
+let replHistory: string[] = [];
+
+///////////////////////////// Square Movement and Path Drawing /////////////////////////////
 
 const updateSquarePosition = (
   state: AppState,
@@ -115,6 +126,8 @@ const drawPath = (
   ctx.fillRect(squareX - 5, squareY - 5, 10, 10);
 };
 
+///////////////////////////// Rendering and Animation /////////////////////////////
+
 const render = (state: AppState) => {
   state.ctx.clearRect(0, 0, state.canvas.width, state.canvas.height);
   drawPath(
@@ -130,36 +143,6 @@ const render = (state: AppState) => {
     state.maxY
   );
 };
-
-//////////////////////////// UI
-
-const commandHistoryRoot = document.getElementById(
-  "command-history"
-) as HTMLElement;
-
-const replHistoryRoot = document.getElementById("repl-history") as HTMLElement;
-
-const updateUi = (commandLoops: CommandLoop[]) => {
-  const loopHtml = commandLoops.map((loop, i) => Loop(loop, i)).join("");
-  commandHistoryRoot.innerHTML = loopHtml;
-
-  const replHistoryHtml = replHistory.map((item) => HistoryItem(item)).join("");
-  replHistoryRoot.innerHTML = replHistoryHtml;
-};
-
-const Loop = (loop: CommandLoop, index: number) =>
-  `<div>${index}:  ${loop.commands.join(" | ")}</div>`;
-
-const HistoryItem = (item: string) => `<div>${item}</div>`;
-
-interface CommandLoop {
-  id: number | null;
-  commands: string[];
-  stopRequest: boolean; // New property to signal stop request
-}
-
-let commandLoops: CommandLoop[] = [];
-let replHistory: string[] = [];
 
 const animate = () => {
   if (state.isStarted) {
@@ -183,31 +166,28 @@ const animate = () => {
   requestAnimationFrame(animate);
 };
 
-const setupEventListeners = () => {
-  const codeInput = document.getElementById("code-input") as HTMLInputElement;
+///////////////////////////// UI Management /////////////////////////////
 
-  const evaluateInput = async () => {
-    const input = codeInput.value.trim();
-    replHistory.push(input);
-    if (input) {
-      try {
-        await smartExecuteCommands(input);
-        evalHistory.push(input);
-        console.log("Command(s) executed:", input);
-      } catch (error) {
-        console.error("Error executing command(s):", error);
-      }
-      codeInput.value = ""; // Clear the input field
-    }
-  };
+const commandHistoryRoot = document.getElementById(
+  "command-history"
+) as HTMLElement;
 
-  codeInput.addEventListener("keypress", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault(); // Prevent default form submission
-      evaluateInput();
-    }
-  });
+const replHistoryRoot = document.getElementById("repl-history") as HTMLElement;
+
+const updateUi = (commandLoops: CommandLoop[]) => {
+  const loopHtml = commandLoops.map((loop, i) => Loop(loop, i)).join("");
+  commandHistoryRoot.innerHTML = loopHtml;
+
+  const replHistoryHtml = replHistory.map((item) => HistoryItem(item)).join("");
+  replHistoryRoot.innerHTML = replHistoryHtml;
 };
+
+const Loop = (loop: CommandLoop, index: number) =>
+  `<div>${index}:  ${loop.commands.join(" | ")}</div>`;
+
+const HistoryItem = (item: string) => `<div>${item}</div>`;
+
+///////////////////////////// Command Execution /////////////////////////////
 
 const smartExecuteCommands = async (input: string) => {
   const commands = input.split(" ");
@@ -272,6 +252,134 @@ const parseCommand = (cmd: string): [string, number] => {
       throw new Error(`Unknown command: ${cmd}`);
   }
 };
+
+const executeCommands = async (commands: string[]) => {
+  for (const cmd of commands) {
+    const [action, value] = parseCommand(cmd);
+    if (action === "wait") {
+      await wait(value);
+    } else {
+      await moveSquare(action as "up" | "down" | "back" | "forward", value);
+    }
+  }
+};
+
+///////////////////////////// Movement and Wait Commands /////////////////////////////
+
+const wait = (frames: number) =>
+  new Promise((resolve) => {
+    const adjustedFrames = frames / state.speed;
+    const targetFrame = state.frameCount + adjustedFrames;
+    const checkFrame = () => {
+      if (state.frameCount >= targetFrame) {
+        resolve();
+      } else {
+        requestAnimationFrame(checkFrame);
+      }
+    };
+    checkFrame();
+  });
+
+const moveSquare = (
+  direction: "up" | "down" | "back" | "forward",
+  distance: number
+): Promise<void> => {
+  return new Promise<void>((resolve) => {
+    let dx = 0;
+    let dy = 0;
+
+    switch (direction) {
+      case "up":
+        dy = -distance;
+        break;
+      case "down":
+        dy = distance;
+        break;
+      case "back":
+        dx = -distance;
+        break;
+      case "forward":
+        dx = distance;
+        break;
+    }
+
+    state = updateSquarePosition(state, dx, dy);
+    render(state);
+    resolve();
+  });
+};
+
+const up = (distance: number): Promise<void> => moveSquare("up", distance);
+const down = (distance: number): Promise<void> => moveSquare("down", distance);
+const back = (distance: number): Promise<void> => moveSquare("back", distance);
+const forward = (distance: number): Promise<void> =>
+  moveSquare("forward", distance);
+
+///////////////////////////// Loop and Control Commands /////////////////////////////
+
+const r = async (commandString: string) => {
+  if (!state.isStarted) {
+    state = { ...state, isStarted: true };
+  }
+  const commands = commandString.split(" ");
+
+  const commandLoop: CommandLoop = {
+    id: null,
+    commands: commands,
+    stopRequest: false, // Initialize stopRequest
+  };
+
+  const loop = async () => {
+    if (commandLoop.stopRequest) {
+      commandLoop.id = null;
+      return;
+    }
+    await executeCommands(commandLoop.commands);
+    commandLoop.id = requestAnimationFrame(loop);
+  };
+
+  // Start a new animation
+  commandLoop.id = requestAnimationFrame(loop);
+
+  commandLoops.push(commandLoop);
+  return commandLoops.length - 1;
+};
+
+const stop = (index?: number) => {
+  if (index !== undefined && index >= 0 && index < commandLoops.length) {
+    // Stop a specific animation
+    const commandLoop = commandLoops[index];
+    if (commandLoop.id !== null) {
+      commandLoop.stopRequest = true; // Set stopRequest flag
+      cancelAnimationFrame(commandLoop.id);
+      commandLoops = commandLoops.filter((val) => val.id !== commandLoop.id);
+      console.log(`Animation ${index} stopped`);
+    } else {
+      console.log(`Animation ${index} is already stopped`);
+    }
+  } else if (index === undefined) {
+    // Stop all animations
+    commandLoops.forEach((commandLoop, i) => {
+      if (commandLoop.id !== null) {
+        commandLoop.stopRequest = true; // Set stopRequest flag
+        cancelAnimationFrame(commandLoop.id);
+        commandLoop.id = null;
+        console.log(`Animation ${i} stopped`);
+      }
+    });
+    commandLoops = [];
+    console.log("All animations stopped");
+  } else {
+    console.log("Invalid animation index");
+  }
+};
+
+const speed = (newSpeed: number) => {
+  state.speed = newSpeed;
+  console.log(`Speed set to ${newSpeed}`);
+};
+
+///////////////////////////// Export Functions /////////////////////////////
 
 const getPathImage = () => {
   const tempCanvas = document.createElement("canvas");
@@ -372,126 +480,32 @@ const dl = () => {
   document.body.removeChild(downloadLink);
 };
 
-const wait = (frames: number) =>
-  new Promise((resolve) => {
-    const adjustedFrames = frames / state.speed;
-    const targetFrame = state.frameCount + adjustedFrames;
-    const checkFrame = () => {
-      if (state.frameCount >= targetFrame) {
-        resolve();
-      } else {
-        requestAnimationFrame(checkFrame);
+///////////////////////////// Setup and Initialization /////////////////////////////
+
+const setupEventListeners = () => {
+  const codeInput = document.getElementById("code-input") as HTMLInputElement;
+
+  const evaluateInput = async () => {
+    const input = codeInput.value.trim();
+    replHistory.push(input);
+    if (input) {
+      try {
+        await smartExecuteCommands(input);
+        evalHistory.push(input);
+        console.log("Command(s) executed:", input);
+      } catch (error) {
+        console.error("Error executing command(s):", error);
       }
-    };
-    checkFrame();
-  });
-
-const moveSquare = (
-  direction: "up" | "down" | "back" | "forward",
-  distance: number
-): Promise<void> => {
-  return new Promise<void>((resolve) => {
-    let dx = 0;
-    let dy = 0;
-
-    switch (direction) {
-      case "up":
-        dy = -distance;
-        break;
-      case "down":
-        dy = distance;
-        break;
-      case "back":
-        dx = -distance;
-        break;
-      case "forward":
-        dx = distance;
-        break;
+      codeInput.value = ""; // Clear the input field
     }
-
-    state = updateSquarePosition(state, dx, dy);
-    render(state);
-    resolve();
-  });
-};
-
-const up = (distance: number): Promise<void> => moveSquare("up", distance);
-const down = (distance: number): Promise<void> => moveSquare("down", distance);
-const back = (distance: number): Promise<void> => moveSquare("back", distance);
-const forward = (distance: number): Promise<void> =>
-  moveSquare("forward", distance);
-
-const executeCommands = async (commands: string[]) => {
-  for (const cmd of commands) {
-    const [action, value] = parseCommand(cmd);
-    if (action === "wait") {
-      await wait(value);
-    } else {
-      await moveSquare(action as "up" | "down" | "back" | "forward", value);
-    }
-  }
-};
-
-const r = async (commandString: string) => {
-  if (!state.isStarted) {
-    state = { ...state, isStarted: true };
-  }
-  const commands = commandString.split(" ");
-
-  const commandLoop: CommandLoop = {
-    id: null,
-    commands: commands,
-    stopRequest: false, // Initialize stopRequest
   };
 
-  const loop = async () => {
-    if (commandLoop.stopRequest) {
-      commandLoop.id = null;
-      return;
+  codeInput.addEventListener("keypress", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault(); // Prevent default form submission
+      evaluateInput();
     }
-    await executeCommands(commandLoop.commands);
-    commandLoop.id = requestAnimationFrame(loop);
-  };
-
-  // Start a new animation
-  commandLoop.id = requestAnimationFrame(loop);
-
-  commandLoops.push(commandLoop);
-  return commandLoops.length - 1;
-};
-
-const stop = (index?: number) => {
-  if (index !== undefined && index >= 0 && index < commandLoops.length) {
-    // Stop a specific animation
-    const commandLoop = commandLoops[index];
-    if (commandLoop.id !== null) {
-      commandLoop.stopRequest = true; // Set stopRequest flag
-      cancelAnimationFrame(commandLoop.id);
-      commandLoops = commandLoops.filter((val) => val.id !== commandLoop.id);
-      console.log(`Animation ${index} stopped`);
-    } else {
-      console.log(`Animation ${index} is already stopped`);
-    }
-  } else if (index === undefined) {
-    // Stop all animations
-    commandLoops.forEach((commandLoop, i) => {
-      if (commandLoop.id !== null) {
-        commandLoop.stopRequest = true; // Set stopRequest flag
-        cancelAnimationFrame(commandLoop.id);
-        commandLoop.id = null;
-        console.log(`Animation ${i} stopped`);
-      }
-    });
-    commandLoops = [];
-    console.log("All animations stopped");
-  } else {
-    console.log("Invalid animation index");
-  }
-};
-
-const speed = (newSpeed: number) => {
-  state.speed = newSpeed;
-  console.log(`Speed set to ${newSpeed}`);
+  });
 };
 
 // Expose functions to the global scope for user interaction
