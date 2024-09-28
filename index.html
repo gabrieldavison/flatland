@@ -7,17 +7,26 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <div class="state-container">
+      <div class="state-box">
+        <div>active loops</div>
+        <div id="command-history"></div>
+      </div>
+
+      <div class="state-box">
+        <div>command history</div>
+        <div id="repl-history"></div>
+      </div>
+      
+      
+    </div>
+    
     <div>
       <div class="app-container">
         <canvas id="canvas" width="800" height="600"></canvas>
-        <div>
           <div class="editor">
             <input type="text" id="code-input"></input>
-            <button id="runButton">run</button>
           </div>
-       
-          <button id="captureButton">Get Path Image</button>
-        </div>
       </div>
     </div>
 

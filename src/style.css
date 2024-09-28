@@ -133,11 +133,31 @@ table {
 :root {
   --bg: #e2e0cb;
   --black: #090a02;
+  --grid-color: rgba(0, 0, 0, 0.1); /* Light grey color for grid */
+  --grid-size: 1px;
+  --grid-space: 10px; /* Space between grid lines */
+}
+
+body {
+  background-color: var(--bg);
+  background-image: linear-gradient(
+      var(--grid-color) var(--grid-size),
+      transparent var(--grid-size)
+    ),
+    linear-gradient(
+      90deg,
+      var(--grid-color) var(--grid-size),
+      transparent var(--grid-size)
+    );
+  background-size: var(--grid-space) var(--grid-space);
+  color: var(--black);
+  font-family: monospace;
 }
 
 body {
   background-color: var(--bg);
   color: var(--black);
+  font-family: monospace;
 }
 
 button {
@@ -157,4 +177,15 @@ button {
 
 .editor {
   display: flex;
+}
+
+.state-container {
+  display: flex;
+  justify-content: space-between;
+  position: absolute;
+  width: 100vw;
+}
+
+.state-box {
+  padding: 1rem;
 }

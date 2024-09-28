@@ -1,5 +1,7 @@
 import "./style.css";
 
+///////////////////////////// Engine
+
 interface Point {
   x: number;
   y: number;
@@ -22,6 +24,7 @@ interface AppState {
   maxY: number;
   frameCount: number;
   speed: number;
+  isStarted: boolean;
 }
 
 const createInitialState = (): AppState => {
@@ -39,6 +42,7 @@ const createInitialState = (): AppState => {
     maxY: 0,
     frameCount: 0,
     speed: 1,
+    isStarted: false,
   };
 };
 
@@ -108,7 +112,7 @@ const drawPath = (
   const squareX = horizontalPosition * scale + offsetX;
   const squareY = verticalOffset * scale + offsetY;
   ctx.fillStyle = "#E03C17";
-  ctx.fillRect(squareX - 10, squareY - 10, 20, 20);
+  ctx.fillRect(squareX - 5, squareY - 5, 10, 10);
 };
 
 const render = (state: AppState) => {
@@ -127,22 +131,146 @@ const render = (state: AppState) => {
   );
 };
 
+//////////////////////////// UI
+
+const commandHistoryRoot = document.getElementById(
+  "command-history"
+) as HTMLElement;
+
+const replHistoryRoot = document.getElementById("repl-history") as HTMLElement;
+
+const updateUi = (commandLoops: CommandLoop[]) => {
+  const loopHtml = commandLoops.map((loop, i) => Loop(loop, i)).join("");
+  commandHistoryRoot.innerHTML = loopHtml;
+
+  const replHistoryHtml = replHistory.map((item) => HistoryItem(item)).join("");
+  replHistoryRoot.innerHTML = replHistoryHtml;
+};
+
+const Loop = (loop: CommandLoop, index: number) =>
+  `<div>${index}:  ${loop.commands.join(" | ")}</div>`;
+
+const HistoryItem = (item: string) => `<div>${item}</div>`;
+
+interface CommandLoop {
+  id: number | null;
+  commands: string[];
+  stopRequest: boolean; // New property to signal stop request
+}
+
+let commandLoops: CommandLoop[] = [];
+let replHistory: string[] = [];
+
 const animate = () => {
-  state = {
-    ...state,
-    horizontalPosition: state.horizontalPosition + 1 * state.speed,
-    maxX: Math.max(state.maxX, state.horizontalPosition + 1 * state.speed),
-    path: [
-      ...state.path,
-      {
-        x: state.horizontalPosition + 1 * state.speed,
-        y: state.square.verticalOffset,
-      },
-    ],
-    frameCount: state.frameCount + 1,
-  };
+  if (state.isStarted) {
+    state = {
+      ...state,
+      horizontalPosition: state.horizontalPosition + 1 * state.speed,
+      maxX: Math.max(state.maxX, state.horizontalPosition + 1 * state.speed),
+      path: [
+        ...state.path,
+        {
+          x: state.horizontalPosition + 1 * state.speed,
+          y: state.square.verticalOffset,
+        },
+      ],
+      frameCount: state.frameCount + 1,
+    };
+    render(state);
+  }
   render(state);
+  updateUi(commandLoops);
   requestAnimationFrame(animate);
+};
+
+const setupEventListeners = () => {
+  const codeInput = document.getElementById("code-input") as HTMLInputElement;
+
+  const evaluateInput = async () => {
+    const input = codeInput.value.trim();
+    replHistory.push(input);
+    if (input) {
+      try {
+        await smartExecuteCommands(input);
+        evalHistory.push(input);
+        console.log("Command(s) executed:", input);
+      } catch (error) {
+        console.error("Error executing command(s):", error);
+      }
+      codeInput.value = ""; // Clear the input field
+    }
+  };
+
+  codeInput.addEventListener("keypress", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault(); // Prevent default form submission
+      evaluateInput();
+    }
+  });
+};
+
+const smartExecuteCommands = async (input: string) => {
+  const commands = input.split(" ");
+
+  if (commands.length === 1) {
+    // Single command execution
+    await executeSingleCommand(commands[0]);
+  } else {
+    // Check for special commands first
+    if (commands[0].startsWith("stop") || commands[0].startsWith("speed")) {
+      await executeSingleCommand(commands[0]);
+    } else {
+      // Multiple commands execution (create a loop)
+      await r(input);
+    }
+  }
+};
+
+const executeSingleCommand = async (command: string) => {
+  if (!state.isStarted) {
+    state = { ...state, isStarted: true };
+  }
+  if (command.startsWith("stop")) {
+    const index = parseInt(command.slice(4));
+    stop(isNaN(index) ? undefined : index);
+  } else if (command.startsWith("speed")) {
+    const value = parseInt(command.slice(5));
+    if (!isNaN(value)) {
+      speed(value);
+    } else {
+      console.error("Speed command requires a numeric value");
+    }
+  } else if (command === "dlImg") {
+    dl();
+  } else if (command === "dlSvg") {
+    exportSvg();
+  } else {
+    const [action, value] = parseCommand(command);
+    if (action === "wait") {
+      await wait(value);
+    } else {
+      await moveSquare(action as "up" | "down" | "back" | "forward", value);
+    }
+  }
+};
+
+const parseCommand = (cmd: string): [string, number] => {
+  const direction = cmd.charAt(0);
+  const value = parseInt(cmd.slice(1));
+  switch (direction) {
+    case "u":
+      return ["up", value];
+    case "d":
+      return ["down", value];
+    case "b":
+      return ["back", value];
+    case "f":
+      return ["forward", value];
+    case "w":
+      return ["wait", value];
+    default:
+      throw new Error(`Unknown command: ${cmd}`);
+  }
 };
 
 const getPathImage = () => {
@@ -172,49 +300,76 @@ const getPathImage = () => {
   return tempCanvas.toDataURL();
 };
 
-const setupEventListeners = () => {
-  const codeInput = document.getElementById("code-input") as HTMLInputElement;
-  const runButton = document.getElementById("runButton") as HTMLButtonElement;
-  const captureButton = document.getElementById(
-    "captureButton"
-  ) as HTMLButtonElement;
+const exportSvg = () => {
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
 
-  const evaluateCode = () => {
-    const code = codeInput.value.trim();
-    if (code) {
-      try {
-        eval(code);
-        evalHistory.push(code);
-        console.log("Code executed:", code);
-      } catch (error) {
-        console.error("Error executing code:", error);
-      }
-      codeInput.value = ""; // Clear the input field
-    }
-  };
+  // Calculate the viewBox
+  const padding = 10; // Add some padding
+  const minX = Math.min(...state.path.map((p) => p.x)) - padding;
+  const minY = Math.min(...state.path.map((p) => p.y)) - padding;
+  const maxX = Math.max(...state.path.map((p) => p.x)) + padding;
+  const maxY = Math.max(...state.path.map((p) => p.y)) + padding;
+  const width = maxX - minX;
+  const height = maxY - minY;
 
-  codeInput.addEventListener("keypress", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault(); // Prevent default form submission
-      evaluateCode();
-    }
-  });
+  svg.setAttribute("viewBox", `${minX} ${minY} ${width} ${height}`);
+  svg.setAttribute("width", width.toString());
+  svg.setAttribute("height", height.toString());
 
-  runButton.addEventListener("click", evaluateCode);
+  // Create the path element
+  const path = document.createElementNS(svgNS, "path");
+  let d = `M ${state.path[0].x} ${state.path[0].y}`;
+  for (let i = 1; i < state.path.length; i++) {
+    d += ` L ${state.path[i].x} ${state.path[i].y}`;
+  }
+  path.setAttribute("d", d);
+  path.setAttribute("stroke", "#090A02");
+  path.setAttribute("fill", "none");
+  svg.appendChild(path);
 
-  captureButton.addEventListener("click", () => {
-    const imageDataUrl = getPathImage();
+  // Create the square at its current position
+  const square = document.createElementNS(svgNS, "rect");
+  square.setAttribute("x", (state.horizontalPosition - 5).toString());
+  square.setAttribute("y", (state.square.verticalOffset - 5).toString());
+  square.setAttribute("width", "10");
+  square.setAttribute("height", "10");
+  square.setAttribute("fill", "#E03C17");
+  svg.appendChild(square);
 
-    // Create a temporary anchor element
-    const downloadLink = document.createElement("a");
-    downloadLink.href = imageDataUrl;
-    downloadLink.download = "canvas_capture.png";
+  // Convert SVG to a string
+  const serializer = new XMLSerializer();
+  const svgString = serializer.serializeToString(svg);
 
-    // Append to the body, click it, and remove it
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    document.body.removeChild(downloadLink);
-  });
+  // Create a Blob with the SVG string
+  const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+
+  // Create a download link and trigger the download
+  const downloadLink = document.createElement("a");
+  downloadLink.href = url;
+  downloadLink.download = "path_export.svg";
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  document.body.removeChild(downloadLink);
+
+  // Clean up the object URL
+  URL.revokeObjectURL(url);
+};
+
+// New export function
+const dl = () => {
+  const imageDataUrl = getPathImage();
+
+  // Create a temporary anchor element
+  const downloadLink = document.createElement("a");
+  downloadLink.href = imageDataUrl;
+  downloadLink.download = "canvas_capture.png";
+
+  // Append to the body, click it, and remove it
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  document.body.removeChild(downloadLink);
 };
 
 const wait = (frames: number) =>
@@ -230,14 +385,6 @@ const wait = (frames: number) =>
     };
     checkFrame();
   });
-
-const repeat = async (times: number, commands: (() => Promise<void>)[]) => {
-  for (let i = 0; i < times; i++) {
-    for (const command of commands) {
-      await command();
-    }
-  }
-};
 
 const moveSquare = (
   direction: "up" | "down" | "back" | "forward",
@@ -274,25 +421,6 @@ const back = (distance: number): Promise<void> => moveSquare("back", distance);
 const forward = (distance: number): Promise<void> =>
   moveSquare("forward", distance);
 
-const parseCommand = (cmd: string): [string, number] => {
-  const direction = cmd.charAt(0);
-  const value = parseInt(cmd.slice(1));
-  switch (direction) {
-    case "u":
-      return ["up", value];
-    case "d":
-      return ["down", value];
-    case "b":
-      return ["back", value];
-    case "f":
-      return ["forward", value];
-    case "w":
-      return ["wait", value];
-    default:
-      throw new Error(`Unknown command: ${direction}`);
-  }
-};
-
 const executeCommands = async (commands: string[]) => {
   for (const cmd of commands) {
     const [action, value] = parseCommand(cmd);
@@ -304,31 +432,60 @@ const executeCommands = async (commands: string[]) => {
   }
 };
 
-let animationId: number | null = null;
-
-const r = (commandString: string) => {
+const r = async (commandString: string) => {
+  if (!state.isStarted) {
+    state = { ...state, isStarted: true };
+  }
   const commands = commandString.split(" ");
 
-  const loop = async () => {
-    await executeCommands(commands);
-    animationId = requestAnimationFrame(loop);
+  const commandLoop: CommandLoop = {
+    id: null,
+    commands: commands,
+    stopRequest: false, // Initialize stopRequest
   };
 
-  // Cancel any existing animation before starting a new one
-  if (animationId !== null) {
-    cancelAnimationFrame(animationId);
-  }
+  const loop = async () => {
+    if (commandLoop.stopRequest) {
+      commandLoop.id = null;
+      return;
+    }
+    await executeCommands(commandLoop.commands);
+    commandLoop.id = requestAnimationFrame(loop);
+  };
 
-  loop();
+  // Start a new animation
+  commandLoop.id = requestAnimationFrame(loop);
+
+  commandLoops.push(commandLoop);
+  return commandLoops.length - 1;
 };
 
-const stop = () => {
-  if (animationId !== null) {
-    cancelAnimationFrame(animationId);
-    animationId = null;
-    console.log("Animation stopped");
+const stop = (index?: number) => {
+  if (index !== undefined && index >= 0 && index < commandLoops.length) {
+    // Stop a specific animation
+    const commandLoop = commandLoops[index];
+    if (commandLoop.id !== null) {
+      commandLoop.stopRequest = true; // Set stopRequest flag
+      cancelAnimationFrame(commandLoop.id);
+      commandLoops = commandLoops.filter((val) => val.id !== commandLoop.id);
+      console.log(`Animation ${index} stopped`);
+    } else {
+      console.log(`Animation ${index} is already stopped`);
+    }
+  } else if (index === undefined) {
+    // Stop all animations
+    commandLoops.forEach((commandLoop, i) => {
+      if (commandLoop.id !== null) {
+        commandLoop.stopRequest = true; // Set stopRequest flag
+        cancelAnimationFrame(commandLoop.id);
+        commandLoop.id = null;
+        console.log(`Animation ${i} stopped`);
+      }
+    });
+    commandLoops = [];
+    console.log("All animations stopped");
   } else {
-    console.log("No animation running");
+    console.log("Invalid animation index");
   }
 };
 
@@ -339,15 +496,16 @@ const speed = (newSpeed: number) => {
 
 // Expose functions to the global scope for user interaction
 (window as any).moveSquare = moveSquare;
-(window as any).up = up;
-(window as any).down = down;
-(window as any).back = back;
-(window as any).forward = forward;
-(window as any).repeat = repeat;
-(window as any).wait = wait;
+(window as any).u = up;
+(window as any).d = down;
+(window as any).b = back;
+(window as any).f = forward;
+(window as any).w = wait;
 (window as any).r = r;
 (window as any).stop = stop;
 (window as any).speed = speed;
+(window as any).dlImg = dl;
+(window as any).dlSvg = exportSvg;
 
 setupEventListeners();
 animate();

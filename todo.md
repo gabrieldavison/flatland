@@ -5,4 +5,3 @@
     - animation loops
     - evaluated text
     - frame count
-    
