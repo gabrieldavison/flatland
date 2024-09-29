@@ -267,7 +267,7 @@ const executeCommands = async (commands: string[]) => {
 ///////////////////////////// Movement and Wait Commands /////////////////////////////
 
 const wait = (frames: number) =>
-  new Promise((resolve) => {
+  new Promise<void>((resolve) => {
     const adjustedFrames = frames / state.speed;
     const targetFrame = state.frameCount + adjustedFrames;
     const checkFrame = () => {
