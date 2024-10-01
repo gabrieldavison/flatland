@@ -1,4 +1,11 @@
 import "./style.css";
+import Alpine from "alpinejs";
+
+///////////////////// Seutp Alpinejs
+
+(window as any).Alpine = Alpine;
+
+Alpine.start();
 
 ///////////////////////////// Types and Interfaces /////////////////////////////
 

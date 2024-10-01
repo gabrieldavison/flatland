@@ -8,11 +8,40 @@
   </head>
 
   <body>
-    <div>lineland</div>
-    <div>
-      <a href="/" target="_blank" rel="noopener noreferrer">lineland</a>
-      <a href="/curveland.html" target="_blank" rel="noopener noreferrer">curveland</a>
+    <div x-data="{ open: true }">
+      <button @click="open = true">help</button>
+   <div class="help-container" x-show="open">
+    <div class="help" >
+      <pre >
+Type a command into the text input to get started.
+
+Pressing enter evaluates the code in the input.
+
+Commands are in the following format:
+  'u100'. Where the text is the name of the command and the number is the parameter value.
+
+Available commands:
+u - up
+d - down
+f - forward
+b - back
+w - wait (the square will continue moving forward for the number of frames specified)
+stop - stop (stops all loops)
+dlSvg - download the canvas as an svg
+
+When multiple commands are evaluated together separated by spaces then they will loop indefinitely.
+
+Try evaluating the following lines one by one to get started:
+
+u100
+d20
+u200 w50 d50 b50 d50 w30 b100 d100 w60
+d100 w100 b20 w100 u50 b20 u40 w30
+      </pre>
+        <button  @click="open = false">close</button>
     </div>
+        </div>
+  </div>
     <div class="state-container">
       <div class="state-box">
         <div>active loops</div>

@@ -9,10 +9,12 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@types/alpinejs": "^3.13.10",
     "typescript": "^5.5.3",
-    "vite": "^5.4.1"
+    "vite": "^5.4.1",
+    "vite-plugin-singlefile": "^2.0.2"
   },
   "dependencies": {
-    "lit": "^3.2.0"
+    "alpinejs": "^3.14.1"
   }
 }
